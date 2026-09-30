@@ -7365,6 +7365,13 @@ paths:
           example: false
           schema:
             type: boolean
+        - in: query
+          name: serviceId
+          description: ID of the Radarr/Sonarr server to remove the media from (overrides is4k)
+          required: false
+          example: 1
+          schema:
+            type: integer
       responses:
         '204':
           description: Successfully removed media item
