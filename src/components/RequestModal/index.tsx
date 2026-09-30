@@ -67,6 +67,7 @@ const RequestModal = ({
           tmdbId={tmdbId}
           onUpdating={onUpdating}
           is4k={is4k}
+          serverId={serverId}
         />
       )}
     </Transition>

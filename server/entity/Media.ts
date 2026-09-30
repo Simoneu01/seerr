@@ -38,7 +38,10 @@ class Media {
   public static async getRelatedMedia(
     user: User | undefined,
     items: { tmdbId: number; mediaType: string }[],
-    { includeActiveRequest = false }: { includeActiveRequest?: boolean } = {}
+    {
+      includeActiveRequest = false,
+      includeServiceData = false,
+    }: { includeActiveRequest?: boolean; includeServiceData?: boolean } = {}
   ): Promise<Media[]> {
     const mediaRepository = getRepository(Media);
 
@@ -49,7 +52,7 @@ class Media {
 
       const finalIds = [...new Set(items.map((i) => i.tmdbId))];
 
-      const media = await mediaRepository
+      const mediaQuery = mediaRepository
         .createQueryBuilder('media')
         .leftJoinAndSelect(
           'media.watchlists',
@@ -57,8 +60,15 @@ class Media {
           'media.id= watchlist.media and watchlist.requestedBy = :userId',
           { userId: user?.id }
         )
-        .where(' media.tmdbId in (:...finalIds)', { finalIds })
-        .getMany();
+        .where(' media.tmdbId in (:...finalIds)', { finalIds });
+
+      if (includeServiceData) {
+        mediaQuery
+          .leftJoinAndSelect('media.serviceStatuses', 'serviceStatus')
+          .leftJoinAndSelect('media.requests', 'request');
+      }
+
+      const media = await mediaQuery.getMany();
 
       const relatedMedia = media.filter((m) =>
         items.some((i) => i.tmdbId === m.tmdbId && i.mediaType === m.mediaType)
