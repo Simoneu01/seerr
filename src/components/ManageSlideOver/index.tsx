@@ -12,6 +12,7 @@ import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { getLabelledServices } from '@app/utils/serviceRequestStatus';
 import { Bars4Icon, ServerIcon } from '@heroicons/react/24/outline';
 import {
   CheckCircleIcon,
@@ -233,9 +234,10 @@ const ManageSlideOver = ({
   ): string | null => {
     if (!slug) return null;
     const protocol = server.useSsl ? 'https' : 'http';
+    const baseUrl = (server.baseUrl ?? '').trim().replace(/^\/+|\/+$/g, '');
     const base = server.externalUrl?.trim()
-      ? server.externalUrl.trim().replace(/\/$/, '')
-      : `${protocol}://${server.hostname}:${server.port}${server.baseUrl?.trim() ?? ''}`;
+      ? server.externalUrl.trim().replace(/\/+$/, '')
+      : `${protocol}://${server.hostname}:${server.port}${baseUrl ? `/${baseUrl}` : ''}`;
     return `${base}/${type}/${slug}`;
   };
 
@@ -249,7 +251,9 @@ const ManageSlideOver = ({
       const slug = ss.externalServiceSlug;
       if (!slug) return null;
       if (ss.serviceType === 'radarr') {
-        const server = radarrData?.find((r) => r.id === ss.serviceId);
+        const server = getLabelledServices(radarrData).find(
+          (r) => r.id === ss.serviceId
+        );
         if (!server) return null;
         const url = buildServiceUrl(server, slug, 'movie');
         if (!url) return null;
@@ -260,7 +264,9 @@ const ManageSlideOver = ({
           isDefault: server.isDefault,
         };
       } else {
-        const server = sonarrData?.find((s) => s.id === ss.serviceId);
+        const server = getLabelledServices(sonarrData).find(
+          (s) => s.id === ss.serviceId
+        );
         if (!server) return null;
         const url = buildServiceUrl(server, slug, 'series');
         if (!url) return null;
@@ -281,6 +287,15 @@ const ManageSlideOver = ({
         serviceId: number;
         isDefault: boolean;
       } => x !== null
+    );
+
+  const showServiceUrl =
+    !!data.mediaInfo?.serviceUrl &&
+    !serviceLinks.some((link) => link.serviceId === data.mediaInfo?.serviceId);
+  const showServiceUrl4k =
+    !!data.mediaInfo?.serviceUrl4k &&
+    !serviceLinks.some(
+      (link) => link.serviceId === data.mediaInfo?.serviceId4k
     );
 
   const requests =
@@ -415,7 +430,7 @@ const ManageSlideOver = ({
         )}
         {hasPermission(Permission.ADMIN) &&
           (serviceLinks.length > 0 ||
-            data.mediaInfo?.serviceUrl ||
+            showServiceUrl ||
             data.mediaInfo?.tautulliUrl ||
             watchData?.data) && (
             <div>
@@ -520,125 +535,114 @@ const ManageSlideOver = ({
                     )}
                   </div>
                 )}
-                {serviceLinks.length > 0
-                  ? serviceLinks.map((link) => (
-                      <div
-                        key={`service-block-${link.serviceId}`}
-                        className="space-y-1"
-                      >
-                        <a
-                          href={link.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="block"
-                        >
-                          <Button buttonType="ghost" className="w-full">
-                            <ServerIcon />
-                            <span>
-                              {intl.formatMessage(messages.openarrinservice, {
-                                name: link.name,
-                              })}
-                            </span>
-                          </Button>
-                        </a>
-                        {hasPermission(Permission.ADMIN) && (
-                          <div>
-                            <ConfirmButton
-                              onClick={() =>
-                                deleteMediaFile(false, link.serviceId)
-                              }
-                              confirmText={intl.formatMessage(
-                                globalMessages.areyousure
-                              )}
-                              className="w-full"
-                            >
-                              <TrashIcon />
-                              <span>
-                                {intl.formatMessage(messages.removearr, {
-                                  arr: link.name,
-                                })}
-                              </span>
-                            </ConfirmButton>
-                            <div className="mt-1 text-xs text-gray-400">
-                              {intl.formatMessage(
-                                messages.manageModalRemoveMediaWarning,
-                                {
-                                  mediaType: intl.formatMessage(
-                                    mediaType === 'movie'
-                                      ? messages.movie
-                                      : messages.tvshow
-                                  ),
-                                  arr: link.name,
-                                }
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))
-                  : data.mediaInfo?.serviceUrl && (
-                      <>
-                        <a
-                          href={data.mediaInfo.serviceUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="block"
-                        >
-                          <Button buttonType="ghost" className="w-full">
-                            <ServerIcon />
-                            <span>
-                              {intl.formatMessage(messages.openarr, {
-                                arr:
-                                  mediaType === 'movie' ? 'Radarr' : 'Sonarr',
-                              })}
-                            </span>
-                          </Button>
-                        </a>
-                        {hasPermission(Permission.ADMIN) &&
-                          isDefaultService() && (
-                            <div>
-                              <ConfirmButton
-                                onClick={() => deleteMediaFile(false)}
-                                confirmText={intl.formatMessage(
-                                  globalMessages.areyousure
-                                )}
-                                className="w-full"
-                              >
-                                <TrashIcon />
-                                <span>
-                                  {intl.formatMessage(messages.removearr, {
-                                    arr:
-                                      mediaType === 'movie'
-                                        ? 'Radarr'
-                                        : 'Sonarr',
-                                  })}
-                                </span>
-                              </ConfirmButton>
-                              <div className="mt-1 text-xs text-gray-400">
-                                {intl.formatMessage(
-                                  messages.manageModalRemoveMediaWarning,
-                                  {
-                                    mediaType: intl.formatMessage(
-                                      mediaType === 'movie'
-                                        ? messages.movie
-                                        : messages.tvshow
-                                    ),
-                                    arr:
-                                      mediaType === 'movie'
-                                        ? 'Radarr'
-                                        : 'Sonarr',
-                                  }
-                                )}
-                              </div>
-                            </div>
+                {serviceLinks.map((link) => (
+                  <div
+                    key={`service-block-${link.serviceId}`}
+                    className="space-y-1"
+                  >
+                    <a
+                      href={link.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block"
+                    >
+                      <Button buttonType="ghost" className="w-full">
+                        <ServerIcon />
+                        <span>
+                          {intl.formatMessage(messages.openarrinservice, {
+                            name: link.name,
+                          })}
+                        </span>
+                      </Button>
+                    </a>
+                    {hasPermission(Permission.ADMIN) && (
+                      <div>
+                        <ConfirmButton
+                          onClick={() => deleteMediaFile(false, link.serviceId)}
+                          confirmText={intl.formatMessage(
+                            globalMessages.areyousure
                           )}
-                      </>
+                          className="w-full"
+                        >
+                          <TrashIcon />
+                          <span>
+                            {intl.formatMessage(messages.removearr, {
+                              arr: link.name,
+                            })}
+                          </span>
+                        </ConfirmButton>
+                        <div className="mt-1 text-xs text-gray-400">
+                          {intl.formatMessage(
+                            messages.manageModalRemoveMediaWarning,
+                            {
+                              mediaType: intl.formatMessage(
+                                mediaType === 'movie'
+                                  ? messages.movie
+                                  : messages.tvshow
+                              ),
+                              arr: link.name,
+                            }
+                          )}
+                        </div>
+                      </div>
                     )}
+                  </div>
+                ))}
+                {showServiceUrl && data.mediaInfo?.serviceUrl && (
+                  <>
+                    <a
+                      href={data.mediaInfo.serviceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block"
+                    >
+                      <Button buttonType="ghost" className="w-full">
+                        <ServerIcon />
+                        <span>
+                          {intl.formatMessage(messages.openarr, {
+                            arr: mediaType === 'movie' ? 'Radarr' : 'Sonarr',
+                          })}
+                        </span>
+                      </Button>
+                    </a>
+                    {hasPermission(Permission.ADMIN) && isDefaultService() && (
+                      <div>
+                        <ConfirmButton
+                          onClick={() => deleteMediaFile(false)}
+                          confirmText={intl.formatMessage(
+                            globalMessages.areyousure
+                          )}
+                          className="w-full"
+                        >
+                          <TrashIcon />
+                          <span>
+                            {intl.formatMessage(messages.removearr, {
+                              arr: mediaType === 'movie' ? 'Radarr' : 'Sonarr',
+                            })}
+                          </span>
+                        </ConfirmButton>
+                        <div className="mt-1 text-xs text-gray-400">
+                          {intl.formatMessage(
+                            messages.manageModalRemoveMediaWarning,
+                            {
+                              mediaType: intl.formatMessage(
+                                mediaType === 'movie'
+                                  ? messages.movie
+                                  : messages.tvshow
+                              ),
+                              arr: mediaType === 'movie' ? 'Radarr' : 'Sonarr',
+                            }
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           )}
         {hasPermission(Permission.ADMIN) &&
-          (data.mediaInfo?.serviceUrl4k ||
+          (showServiceUrl4k ||
             data.mediaInfo?.tautulliUrl4k ||
             watchData?.data4k) && (
             <div>
@@ -745,10 +749,10 @@ const ManageSlideOver = ({
                     )}
                   </div>
                 )}
-                {data?.mediaInfo?.serviceUrl4k && (
+                {showServiceUrl4k && data.mediaInfo?.serviceUrl4k && (
                   <>
                     <a
-                      href={data?.mediaInfo?.serviceUrl4k}
+                      href={data.mediaInfo.serviceUrl4k}
                       target="_blank"
                       rel="noreferrer"
                       className="block"

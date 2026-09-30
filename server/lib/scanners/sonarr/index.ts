@@ -174,6 +174,10 @@ class SonarrScanner
         where: { tvdbId: sonarrSeries.tvdbId },
       });
 
+      if (media?.tmdbId) {
+        this.currentServerTmdbIds.add(media.tmdbId);
+      }
+
       if (!media || !media.tmdbId) {
         tvShow = await this.tmdb.getShowByTvdbIdForScan({
           tvdbId: sonarrSeries.tvdbId,

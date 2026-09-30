@@ -1663,6 +1663,10 @@ describe('POST /request, auto-requests', () => {
 });
 
 describe('POST /request, per-service slots', () => {
+  beforeEach(() => {
+    configureLanguageServers();
+  });
+
   async function grantServices(email: string, services: string[]) {
     const userRepo = getRepository(User);
     const user = await userRepo.findOneOrFail({ where: { email } });
@@ -1718,7 +1722,19 @@ describe('POST /request, per-service slots', () => {
     const res = await friend
       .post('/request')
       .send({ mediaType: 'movie', mediaId: 99901, isServiceRequest: true });
-    assert.strictEqual(res.status, 500);
+    assert.strictEqual(res.status, 400);
+  });
+
+  it('rejects a service request to a server that is not configured', async () => {
+    const admin = await loginAs('admin@seerr.dev', 'test1234');
+
+    const res = await admin.post('/request').send({
+      mediaType: 'movie',
+      mediaId: 99901,
+      serverId: 7,
+      isServiceRequest: true,
+    });
+    assert.strictEqual(res.status, 400);
   });
 
   it('rejects a service request to a service the user has no grant for', async () => {
@@ -1881,4 +1897,54 @@ describe('POST /request, per-service slots', () => {
       ]);
     });
   }
+
+  describe('editing a service request', () => {
+    const tvRequestIn = (serverId: number, seasons: number[]) => ({
+      mediaType: 'tv',
+      mediaId: 99960,
+      serverId,
+      isServiceRequest: true,
+      seasons,
+    });
+
+    it('does not let the owner move it to another server', async () => {
+      await grantServices('demo@seerr.dev', ['sonarr:0']);
+      const owner = await loginAs('demo@seerr.dev', 'test1234');
+
+      const created = await owner.post('/request').send(tvRequestIn(0, [1]));
+      assert.strictEqual(created.status, 201);
+
+      const res = await owner
+        .put(`/request/${created.body.id}`)
+        .send({ mediaType: 'tv', serverId: 1, seasons: [1] });
+      assert.strictEqual(res.status, 400);
+
+      const saved = await getRepository(MediaRequest).findOneOrFail({
+        where: { id: created.body.id },
+      });
+      assert.strictEqual(saved.serverId, 0);
+    });
+
+    it('only checks seasons against requests for the same server', async () => {
+      await grantServices('demo@seerr.dev', ['sonarr:0', 'sonarr:1']);
+      const owner = await loginAs('demo@seerr.dev', 'test1234');
+
+      const english = await owner.post('/request').send(tvRequestIn(0, [1, 2]));
+      assert.strictEqual(english.status, 201);
+
+      const italian = await owner.post('/request').send(tvRequestIn(1, [1]));
+      assert.strictEqual(italian.status, 201);
+
+      const res = await owner
+        .put(`/request/${italian.body.id}`)
+        .send({ mediaType: 'tv', serverId: 1, seasons: [1, 2] });
+      assert.strictEqual(res.status, 200);
+      assert.deepStrictEqual(
+        res.body.seasons
+          .map((season: { seasonNumber: number }) => season.seasonNumber)
+          .sort(),
+        [1, 2]
+      );
+    });
+  });
 });

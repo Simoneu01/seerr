@@ -3,7 +3,7 @@ import SonarrAPI from '@server/api/servarr/sonarr';
 import TautulliAPI from '@server/api/tautulli';
 import TheMovieDb from '@server/api/themoviedb';
 import { MediaStatus, MediaType } from '@server/constants/media';
-import { getRepository } from '@server/datasource';
+import dataSource, { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
 import MediaServiceStatus from '@server/entity/MediaServiceStatus';
@@ -308,22 +308,30 @@ mediaRoutes.delete(
       }
 
       if (isServiceDelete) {
-        await getRepository(MediaServiceStatus)
-          .createQueryBuilder()
-          .delete()
-          .where('mediaId = :mediaId', { mediaId: media.id })
-          .andWhere('serviceId = :serviceId', { serviceId: explicitServiceId })
-          .execute();
+        await dataSource.transaction(async (em) => {
+          await em
+            .getRepository(MediaServiceStatus)
+            .createQueryBuilder()
+            .delete()
+            .where('mediaId = :mediaId', { mediaId: media.id })
+            .andWhere('serviceId = :serviceId', {
+              serviceId: explicitServiceId,
+            })
+            .execute();
 
-        await getRepository(MediaRequest)
-          .createQueryBuilder()
-          .delete()
-          .where('mediaId = :mediaId', { mediaId: media.id })
-          .andWhere('serverId = :serviceId', { serviceId: explicitServiceId })
-          .andWhere('isServiceRequest = :isServiceRequest', {
-            isServiceRequest: true,
-          })
-          .execute();
+          await em
+            .getRepository(MediaRequest)
+            .createQueryBuilder()
+            .delete()
+            .where('mediaId = :mediaId', { mediaId: media.id })
+            .andWhere('serverId = :serviceId', {
+              serviceId: explicitServiceId,
+            })
+            .andWhere('isServiceRequest = :isServiceRequest', {
+              isServiceRequest: true,
+            })
+            .execute();
+        });
       } else {
         media[is4k ? 'status4k' : 'status'] = MediaStatus.DELETED;
         media.resetServiceData(is4k);

@@ -776,8 +776,11 @@ userSettingsRoutes.post<
       user.permissions = req.body.permissions;
 
       if (req.body.requestServices !== undefined) {
-        user.requestServices = req.body.requestServices.filter((s) =>
-          /^(radarr|sonarr):\d+$/.test(s)
+        if (!Array.isArray(req.body.requestServices)) {
+          return next({ status: 400, message: 'Invalid requestServices.' });
+        }
+        user.requestServices = req.body.requestServices.filter(
+          (s) => typeof s === 'string' && /^(radarr|sonarr):\d+$/.test(s)
         );
       }
 

@@ -4,6 +4,7 @@ import useSettings from '@app/hooks/useSettings';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { getLabelledServices } from '@app/utils/serviceRequestStatus';
 import { ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import {
   CheckIcon,
@@ -289,10 +290,20 @@ const RequestButton = ({
   }
 
   const servicePrefix = mediaType === 'movie' ? 'radarr' : 'sonarr';
+  const applicableServices = getLabelledServices(allServices).filter(
+    (service) => !service.animeOnly || isAnime
+  );
   const restrictToServices =
-    (user?.requestServices ?? []).some((service) =>
-      service.startsWith(`${servicePrefix}:`)
-    ) && !hasPermission(Permission.MANAGE_REQUESTS);
+    !hasPermission(Permission.MANAGE_REQUESTS) &&
+    (allServices
+      ? applicableServices.some((service) =>
+          (user?.requestServices ?? []).includes(
+            `${servicePrefix}:${service.id}`
+          )
+        )
+      : (user?.requestServices ?? []).some((service) =>
+          service.startsWith(`${servicePrefix}:`)
+        ));
 
   // Standard request button
   if (
@@ -391,13 +402,7 @@ const RequestButton = ({
     });
   }
 
-  const labelledServices = (allServices ?? []).filter((s) => s.buttonLabel);
-
-  for (const service of labelledServices) {
-    if (service.animeOnly && !isAnime) {
-      continue;
-    }
-
+  for (const service of applicableServices) {
     const serviceStatusEntry = media?.serviceStatuses?.find(
       (ss) => ss.serviceId === service.id
     );

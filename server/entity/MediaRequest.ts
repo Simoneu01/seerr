@@ -41,6 +41,7 @@ export class QuotaRestrictedError extends Error {}
 export class DuplicateMediaRequestError extends Error {}
 export class NoSeasonsAvailableError extends Error {}
 export class BlocklistedMediaError extends Error {}
+export class InvalidServiceRequestError extends Error {}
 
 type MediaRequestOptions = {
   isAutoRequest?: boolean;
@@ -187,8 +188,21 @@ export class MediaRequest {
       requestBody.serverId >= 0;
 
     if (requestBody.isServiceRequest && !isServiceSpecific) {
-      throw new Error(
+      throw new InvalidServiceRequestError(
         'Service-specific requests must target a valid serverId.'
+      );
+    }
+
+    if (
+      isServiceSpecific &&
+      !(
+        requestBody.mediaType === MediaType.MOVIE
+          ? settings.radarr
+          : settings.sonarr
+      ).some((server) => server.id === requestBody.serverId)
+    ) {
+      throw new InvalidServiceRequestError(
+        'Service-specific requests must target a configured server.'
       );
     }
 

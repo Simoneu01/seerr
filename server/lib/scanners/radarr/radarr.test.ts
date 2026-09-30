@@ -771,5 +771,62 @@ describe('Radarr Scanner', () => {
       ).findOneOrFail({ where: { mediaId, serviceId: 0 } });
       assert.strictEqual(serviceStatus.status, MediaStatus.UNKNOWN);
     });
+
+    it('declines approved requests for a server the movie was removed from', async () => {
+      const media = await getRepository(Media).save(
+        new Media({ tmdbId: 563, mediaType: MediaType.MOVIE })
+      );
+      await getRepository(MediaServiceStatus).save(
+        new MediaServiceStatus({
+          mediaId: media.id,
+          serviceId: 0,
+          serviceType: 'radarr',
+          status: MediaStatus.PROCESSING,
+        })
+      );
+      getSettings().radarr = [];
+      const requestedBy = await getRepository(User).findOneOrFail({
+        where: { email: 'admin@seerr.dev' },
+      });
+      const seedRequest = (serverId: number, status: MediaRequestStatus) =>
+        getRepository(MediaRequest).save(
+          new MediaRequest({
+            type: MediaType.MOVIE,
+            media,
+            requestedBy,
+            status,
+            is4k: false,
+            serverId,
+            isServiceRequest: true,
+          })
+        );
+      const approved = await seedRequest(0, MediaRequestStatus.APPROVED);
+      const completed = await seedRequest(0, MediaRequestStatus.COMPLETED);
+      const otherServer = await seedRequest(1, MediaRequestStatus.APPROVED);
+
+      configureRadarr([{ syncEnabled: true }]);
+      getMoviesImpl = async () => [fakeRadarrMovie({ tmdbId: 564, id: 97 })];
+
+      await runWithMockTimers(() => radarrScanner.run());
+
+      const statusOf = async (id: number) =>
+        (
+          await getRepository(MediaRequest).findOneOrFail({
+            where: { id },
+          })
+        ).status;
+      assert.strictEqual(
+        await statusOf(approved.id),
+        MediaRequestStatus.DECLINED
+      );
+      assert.strictEqual(
+        await statusOf(completed.id),
+        MediaRequestStatus.COMPLETED
+      );
+      assert.strictEqual(
+        await statusOf(otherServer.id),
+        MediaRequestStatus.APPROVED
+      );
+    });
   });
 });

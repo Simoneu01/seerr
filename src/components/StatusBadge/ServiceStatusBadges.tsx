@@ -1,6 +1,6 @@
 import StatusBadge, { getStatusLabel } from '@app/components/StatusBadge';
 import defineMessages from '@app/utils/defineMessages';
-import { MediaRequestStatus, MediaStatus } from '@server/constants/media';
+import { getServiceStatusItems } from '@app/utils/serviceRequestStatus';
 import type { MediaRequest } from '@server/entity/MediaRequest';
 import type MediaServiceStatus from '@server/entity/MediaServiceStatus';
 import type { ServiceCommonServer } from '@server/interfaces/api/serviceInterfaces';
@@ -31,52 +31,19 @@ const ServiceStatusBadges = ({
   seasonNumber,
 }: ServiceStatusBadgesProps) => {
   const intl = useIntl();
-  const pendingServiceRequests = (requests ?? []).filter(
-    (request) =>
-      request.isServiceRequest &&
-      request.status === MediaRequestStatus.PENDING &&
-      seasonNumber === undefined
-  );
   const { data: services } = useSWR<ServiceCommonServer[]>(
-    serviceStatuses?.length || pendingServiceRequests.length
+    serviceStatuses?.length ||
+      (requests ?? []).some((request) => request.isServiceRequest)
       ? `/api/v1/service/${mediaType === 'movie' ? 'radarr' : 'sonarr'}`
       : null
   );
 
-  if (!services || (!serviceStatuses?.length && !pendingServiceRequests.length))
-    return null;
-
-  const items = (serviceStatuses ?? [])
-    .map((ss) => {
-      const server = services.find((s) => s.id === ss.serviceId);
-      if (!server) return null;
-      const status =
-        seasonNumber !== undefined
-          ? ss.seasonStatuses?.[seasonNumber]
-          : ss.status;
-      if (
-        status === undefined ||
-        status === MediaStatus.UNKNOWN ||
-        status === MediaStatus.DELETED
-      ) {
-        return null;
-      }
-      const downloadItem =
-        seasonNumber === undefined ? (ss.downloadStatus ?? []) : [];
-      return { server, status, downloadItem };
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null);
-
-  for (const request of pendingServiceRequests) {
-    if (items.some(({ server }) => server.id === request.serverId)) {
-      continue;
-    }
-    const server = services.find((s) => s.id === request.serverId);
-    if (!server) {
-      continue;
-    }
-    items.push({ server, status: MediaStatus.PENDING, downloadItem: [] });
-  }
+  const items = getServiceStatusItems({
+    services,
+    serviceStatuses,
+    requests,
+    seasonNumber,
+  });
 
   if (!items.length) return null;
 

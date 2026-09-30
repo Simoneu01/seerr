@@ -34,6 +34,11 @@ import { sortCrewPriority } from '@app/utils/creditHelpers';
 import defineMessages from '@app/utils/defineMessages';
 import { refreshIntervalHelper } from '@app/utils/refreshIntervalHelper';
 import {
+  getServiceStatusItems,
+  getStandardServiceId,
+  isCoveredByServiceStatus,
+} from '@app/utils/serviceRequestStatus';
+import {
   ArrowRightCircleIcon,
   CloudIcon,
   CogIcon,
@@ -52,12 +57,9 @@ import {
 import { type RatingResponse } from '@server/api/ratings';
 import { ANIME_KEYWORD_ID } from '@server/api/themoviedb/constants';
 import { IssueStatus } from '@server/constants/issue';
-import {
-  MediaRequestStatus,
-  MediaStatus,
-  MediaType,
-} from '@server/constants/media';
+import { MediaStatus, MediaType } from '@server/constants/media';
 import { MediaServerType } from '@server/constants/server';
+import type { ServiceCommonServer } from '@server/interfaces/api/serviceInterfaces';
 import type { MovieDetails as MovieDetailsType } from '@server/models/Movie';
 import axios from 'axios';
 import { countries } from 'country-flag-icons';
@@ -154,6 +156,10 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
 
   const { data: ratingData } = useSWR<RatingResponse>(
     `/api/v1/movie/${router.query.movieId}/ratingscombined`
+  );
+
+  const { data: radarrServices } = useSWR<ServiceCommonServer[]>(
+    '/api/v1/service/radarr'
   );
 
   const sortedCrew = useMemo(
@@ -441,6 +447,20 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
     type: 'or',
   });
 
+  const serviceStatusItems = getServiceStatusItems({
+    services: radarrServices,
+    serviceStatuses: data.mediaInfo?.serviceStatuses,
+    requests: data.mediaInfo?.requests,
+  });
+  const showStandardStatus = !isCoveredByServiceStatus(
+    serviceStatusItems,
+    getStandardServiceId(radarrServices, data.mediaInfo, false)
+  );
+  const show4kStatus = !isCoveredByServiceStatus(
+    serviceStatusItems,
+    getStandardServiceId(radarrServices, data.mediaInfo, true)
+  );
+
   return (
     <div
       className="media-page"
@@ -514,61 +534,50 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
         </div>
         <div className="media-title">
           <div className="media-status">
-            {data.mediaInfo?.serviceStatuses?.some(
-              (ss) =>
-                ss.status !== MediaStatus.UNKNOWN &&
-                ss.status !== MediaStatus.DELETED
-            ) ||
-            data.mediaInfo?.requests?.some(
-              (request) =>
-                request.isServiceRequest &&
-                request.status === MediaRequestStatus.PENDING
-            ) ? (
-              <ServiceStatusBadges
-                serviceStatuses={data.mediaInfo.serviceStatuses}
-                requests={data.mediaInfo.requests}
+            <ServiceStatusBadges
+              serviceStatuses={data.mediaInfo?.serviceStatuses}
+              requests={data.mediaInfo?.requests}
+              mediaType="movie"
+              plexUrl={plexUrl}
+              tmdbId={data.mediaInfo?.tmdbId}
+              title={data.title}
+            />
+            {showStandardStatus && (
+              <StatusBadge
+                status={data.mediaInfo?.status}
+                downloadItem={data.mediaInfo?.downloadStatus}
+                title={data.title}
+                inProgress={(data.mediaInfo?.downloadStatus ?? []).length > 0}
+                tmdbId={data.mediaInfo?.tmdbId}
                 mediaType="movie"
                 plexUrl={plexUrl}
-                tmdbId={data.mediaInfo.tmdbId}
-                title={data.title}
+                serviceUrl={data.mediaInfo?.serviceUrl}
               />
-            ) : (
-              <>
+            )}
+            {show4kStatus &&
+              settings.currentSettings.movie4kEnabled &&
+              hasPermission(
+                [
+                  Permission.MANAGE_REQUESTS,
+                  Permission.REQUEST_4K,
+                  Permission.REQUEST_4K_MOVIE,
+                ],
+                { type: 'or' }
+              ) && (
                 <StatusBadge
-                  status={data.mediaInfo?.status}
-                  downloadItem={data.mediaInfo?.downloadStatus}
+                  status={data.mediaInfo?.status4k}
+                  downloadItem={data.mediaInfo?.downloadStatus4k}
                   title={data.title}
-                  inProgress={(data.mediaInfo?.downloadStatus ?? []).length > 0}
+                  is4k
+                  inProgress={
+                    (data.mediaInfo?.downloadStatus4k ?? []).length > 0
+                  }
                   tmdbId={data.mediaInfo?.tmdbId}
                   mediaType="movie"
-                  plexUrl={plexUrl}
-                  serviceUrl={data.mediaInfo?.serviceUrl}
+                  plexUrl={plexUrl4k}
+                  serviceUrl={data.mediaInfo?.serviceUrl4k}
                 />
-                {settings.currentSettings.movie4kEnabled &&
-                  hasPermission(
-                    [
-                      Permission.MANAGE_REQUESTS,
-                      Permission.REQUEST_4K,
-                      Permission.REQUEST_4K_MOVIE,
-                    ],
-                    { type: 'or' }
-                  ) && (
-                    <StatusBadge
-                      status={data.mediaInfo?.status4k}
-                      downloadItem={data.mediaInfo?.downloadStatus4k}
-                      title={data.title}
-                      is4k
-                      inProgress={
-                        (data.mediaInfo?.downloadStatus4k ?? []).length > 0
-                      }
-                      tmdbId={data.mediaInfo?.tmdbId}
-                      mediaType="movie"
-                      plexUrl={plexUrl4k}
-                      serviceUrl={data.mediaInfo?.serviceUrl4k}
-                    />
-                  )}
-              </>
-            )}
+              )}
           </div>
           <h1 data-testid="media-title">
             {data.title}{' '}
@@ -689,7 +698,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
               data.mediaInfo.jellyfinMediaId4k ||
               data.mediaInfo.status !== MediaStatus.UNKNOWN ||
               data.mediaInfo.status4k !== MediaStatus.UNKNOWN ||
-              (data.mediaInfo.serviceStatuses ?? []).length > 0 ||
+              serviceStatusItems.length > 0 ||
               (data.mediaInfo.requests ?? []).length > 0) && (
               <Tooltip content={intl.formatMessage(messages.managemovie)}>
                 <Button

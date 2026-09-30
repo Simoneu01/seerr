@@ -14,6 +14,7 @@ import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import AsyncLock from '@server/utils/asyncLock';
 import { randomUUID } from 'crypto';
+import { In } from 'typeorm';
 
 // Default scan rates (can be overidden)
 const BUNDLE_SIZE = 20;
@@ -998,11 +999,12 @@ class BaseScanner<T> {
 
     const serviceStatusRepository = getRepository(MediaServiceStatus);
 
-    const candidates: { id: number; tmdbId: number }[] =
+    const candidates: { id: number; mediaId: number; tmdbId: number }[] =
       await serviceStatusRepository
         .createQueryBuilder('serviceStatus')
         .innerJoin(Media, 'media', 'media.id = serviceStatus.mediaId')
         .select('serviceStatus.id', 'id')
+        .addSelect('serviceStatus.mediaId', 'mediaId')
         .addSelect('media.tmdbId', 'tmdbId')
         .where('serviceStatus.serviceId = :serviceId', { serviceId })
         .andWhere('serviceStatus.serviceType = :serviceType', { serviceType })
@@ -1012,9 +1014,10 @@ class BaseScanner<T> {
         .andWhere('media.mediaType = :mediaType', { mediaType })
         .getRawMany();
 
-    const staleIds = candidates
-      .filter((candidate) => !seenTmdbIds.has(Number(candidate.tmdbId)))
-      .map((candidate) => candidate.id);
+    const staleCandidates = candidates.filter(
+      (candidate) => !seenTmdbIds.has(Number(candidate.tmdbId))
+    );
+    const staleIds = staleCandidates.map((candidate) => candidate.id);
 
     const chunkSize = 500;
     for (let i = 0; i < staleIds.length; i += chunkSize) {
@@ -1036,6 +1039,42 @@ class BaseScanner<T> {
       } items retained)`,
       'info'
     );
+
+    await this.declineStaleServiceRequests(
+      serviceId,
+      staleCandidates.map((candidate) => Number(candidate.mediaId)),
+      serverName
+    );
+  }
+
+  private async declineStaleServiceRequests(
+    serviceId: number,
+    mediaIds: number[],
+    serverName: string
+  ): Promise<void> {
+    const requestRepository = getRepository(MediaRequest);
+
+    const chunkSize = 500;
+    for (let i = 0; i < mediaIds.length; i += chunkSize) {
+      const requests = await requestRepository.find({
+        where: {
+          media: { id: In(mediaIds.slice(i, i + chunkSize)) },
+          isServiceRequest: true,
+          serverId: serviceId,
+          status: MediaRequestStatus.APPROVED,
+        },
+        relations: { media: true },
+      });
+
+      for (const request of requests) {
+        request.status = MediaRequestStatus.DECLINED;
+        await requestRepository.save(request);
+        this.log(
+          `Declined service request ${request.id} for ${request.media.tmdbId}, no longer found in ${serverName}.`,
+          'info'
+        );
+      }
+    }
   }
 
   get protectedUpdateRate(): number {

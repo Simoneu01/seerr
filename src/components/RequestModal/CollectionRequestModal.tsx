@@ -10,7 +10,10 @@ import useToasts from '@app/hooks/useToasts';
 import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { getMediaServiceStatus } from '@app/utils/serviceRequestStatus';
+import {
+  getLabelledServices,
+  getMediaServiceStatus,
+} from '@app/utils/serviceRequestStatus';
 import { MediaRequestStatus, MediaStatus } from '@server/constants/media';
 import type { MediaRequest } from '@server/entity/MediaRequest';
 import type { ServiceCommonServer } from '@server/interfaces/api/serviceInterfaces';
@@ -399,7 +402,7 @@ const CollectionRequestModal = ({
                         partStatus !== undefined &&
                         partStatus !== MediaStatus.UNKNOWN &&
                         partStatus !== MediaStatus.DELETED;
-                      const serviceStatuses = (services ?? [])
+                      const serviceStatuses = getLabelledServices(services)
                         .filter((service) => service.id !== serverId)
                         .map((service) => ({
                           service,

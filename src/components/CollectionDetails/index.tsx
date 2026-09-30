@@ -16,7 +16,10 @@ import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import { refreshIntervalHelper } from '@app/utils/refreshIntervalHelper';
-import { getMediaServiceStatus } from '@app/utils/serviceRequestStatus';
+import {
+  getLabelledServices,
+  getMediaServiceStatus,
+} from '@app/utils/serviceRequestStatus';
 import {
   ArrowDownTrayIcon,
   EyeIcon,
@@ -228,10 +231,18 @@ const CollectionDetails = ({ collection }: CollectionDetailsProps) => {
     [Permission.REQUEST, Permission.REQUEST_MOVIE],
     { type: 'or' }
   );
+  const collectionServices = getLabelledServices(radarrServices).filter(
+    (service) => !service.animeOnly
+  );
   const restrictToServices =
-    (user?.requestServices ?? []).some((service) =>
-      service.startsWith('radarr:')
-    ) && !hasPermission(Permission.MANAGE_REQUESTS);
+    !hasPermission(Permission.MANAGE_REQUESTS) &&
+    (radarrServices
+      ? collectionServices.some((service) =>
+          (user?.requestServices ?? []).includes(`radarr:${service.id}`)
+        )
+      : (user?.requestServices ?? []).some((service) =>
+          service.startsWith('radarr:')
+        ));
 
   const hasRequestable =
     !restrictToServices &&
@@ -257,10 +268,8 @@ const CollectionDetails = ({ collection }: CollectionDetailsProps) => {
     ).length > 0;
 
   const requestableServices = canRequestMovies
-    ? (radarrServices ?? []).filter(
+    ? collectionServices.filter(
         (service) =>
-          service.buttonLabel &&
-          !service.animeOnly &&
           (hasPermission(Permission.MANAGE_REQUESTS) ||
             (user?.requestServices ?? []).includes(`radarr:${service.id}`)) &&
           data.parts.some(
@@ -309,14 +318,14 @@ const CollectionDetails = ({ collection }: CollectionDetailsProps) => {
   const [primaryRequestOption, ...otherRequestOptions] = requestOptions;
 
   const getPartServiceStatuses = (part: MovieResult) =>
-    (radarrServices ?? [])
+    getLabelledServices(radarrServices)
       .map((service) => ({
         service,
         ...getMediaServiceStatus(part.mediaInfo, service.id),
       }))
       .filter(({ status }) => status !== MediaStatus.UNKNOWN);
 
-  const collectionServiceStatuses = (radarrServices ?? [])
+  const collectionServiceStatuses = getLabelledServices(radarrServices)
     .map((service) => {
       const partStatuses = data.parts
         .filter((part) => part.mediaInfo?.status !== MediaStatus.BLOCKLISTED)
@@ -352,6 +361,16 @@ const CollectionDetails = ({ collection }: CollectionDetailsProps) => {
       };
     })
     .filter(({ status }) => status !== MediaStatus.UNKNOWN);
+
+  const isCoveredByCollectionServiceStatus = (is4k: boolean) => {
+    const defaultServiceId = radarrServices?.find(
+      (service) => service.isDefault && service.is4k === is4k
+    )?.id;
+
+    return collectionServiceStatuses.some(
+      ({ service }) => service.id === defaultServiceId
+    );
+  };
 
   const blocklistVisibility = hasPermission(
     [Permission.MANAGE_BLOCKLIST, Permission.VIEW_BLOCKLIST],
@@ -463,8 +482,7 @@ const CollectionDetails = ({ collection }: CollectionDetailsProps) => {
         </div>
         <div className="media-title">
           <div className="media-status">
-            {collectionServiceStatuses.length > 0 &&
-            !isCollectionBlocklisted ? (
+            {!isCollectionBlocklisted &&
               collectionServiceStatuses.map(
                 ({ service, status, downloadItem, titles }) => (
                   <StatusBadge
@@ -486,42 +504,42 @@ const CollectionDetails = ({ collection }: CollectionDetailsProps) => {
                     )}
                   />
                 )
-              )
-            ) : (
-              <>
+              )}
+            {(isCollectionBlocklisted ||
+              !isCoveredByCollectionServiceStatus(false)) && (
+              <StatusBadge
+                status={collectionStatus}
+                downloadItem={downloadStatus}
+                title={titles}
+                statusLabelOverride={
+                  isCollectionPartiallyBlocklisted
+                    ? intl.formatMessage(globalMessages.partiallyblocklisted)
+                    : undefined
+                }
+                inProgress={data.parts.some(
+                  (part) => (part.mediaInfo?.downloadStatus ?? []).length > 0
+                )}
+              />
+            )}
+            {!isCoveredByCollectionServiceStatus(true) &&
+              settings.currentSettings.movie4kEnabled &&
+              hasPermission(
+                [Permission.REQUEST_4K, Permission.REQUEST_4K_MOVIE],
+                {
+                  type: 'or',
+                }
+              ) && (
                 <StatusBadge
-                  status={collectionStatus}
-                  downloadItem={downloadStatus}
-                  title={titles}
-                  statusLabelOverride={
-                    isCollectionPartiallyBlocklisted
-                      ? intl.formatMessage(globalMessages.partiallyblocklisted)
-                      : undefined
-                  }
+                  status={collectionStatus4k}
+                  downloadItem={downloadStatus4k}
+                  title={titles4k}
+                  is4k
                   inProgress={data.parts.some(
-                    (part) => (part.mediaInfo?.downloadStatus ?? []).length > 0
+                    (part) =>
+                      (part.mediaInfo?.downloadStatus4k ?? []).length > 0
                   )}
                 />
-                {settings.currentSettings.movie4kEnabled &&
-                  hasPermission(
-                    [Permission.REQUEST_4K, Permission.REQUEST_4K_MOVIE],
-                    {
-                      type: 'or',
-                    }
-                  ) && (
-                    <StatusBadge
-                      status={collectionStatus4k}
-                      downloadItem={downloadStatus4k}
-                      title={titles4k}
-                      is4k
-                      inProgress={data.parts.some(
-                        (part) =>
-                          (part.mediaInfo?.downloadStatus4k ?? []).length > 0
-                      )}
-                    />
-                  )}
-              </>
-            )}
+              )}
           </div>
           <h1>{data.name}</h1>
           <span className="media-attributes">
